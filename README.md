@@ -16,3 +16,53 @@ distribution changes over time.  I did nothing with this idea for
 almost a decade, but it stayed in the back of my mind.
 
 Now, I start writing the code to do it.
+
+Analyses
+========
+```thank-collect```
+-------------------
+```thank-collect``` looks at up to 20 words in the final response
+of a speaker in a transcript immediately following "thank" or "thanks",
+and tabulates every unique group of 1 to 5 consecutive words in
+that response by transcript and speaker.  Since each transcript has
+a date, it should be possible to see how the relative prevalences of
+groups of words change over time.
+
+```phrase-collect```
+--------------------
+```phrase-collect``` tabulates the number of occurrences of a
+specified set of phrases in each transcript, as well as the number
+of occurrences of another set of phrases that preface a response
+in each transcript.
+
+Two of the phrases are "bucket list" and "perfect storm", since I
+believe they should not appear until after the movies of the same
+name were released.
+
+I'm also interested in the relative prevelances of "definitely" and
+"absolutely", since I believe the latter has become more prevelant
+and the former has become less prevelant.
+
+I'll also look at "exponentially", though I believe the growth in
+the usage of that term plateaued before 2004, and the transcripts
+I'm looking at only go back to 2004.
+
+Also, I'm interested in responses prefaced by "look" and prefaced
+by "absolutely".
+
+Initial results
+---------------
+For 911 transcripts from between 2025-11-01 and 2025-11-30, the
+most common final responses to thanks, with a lot of overlap, are
+
+|response           |count|
+|-------------------|-----|
+|thank you          |285  |
+|you're welcome     |67   |
+|for having         |57   |
+|for having me      |52   |
+|so much            |28   |
+|very much          |10   |
+|you bet            |10   |
+|appreciate it      |8    |
+|a pleasure         |8    |

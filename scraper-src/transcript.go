@@ -66,6 +66,19 @@ func toTranscript(text []string) []Transcript {
 				}
 			}
 			if !found {
+				split := strings.SplitN(name, " ", 2)
+				if len(split) == 2 {
+					for _, n := range names {
+						if strings.HasPrefix(n, split[0]) && strings.HasSuffix(n, split[1]) {
+							names[name] = n
+							name = n
+							found = true
+							break
+						}
+					}
+				}
+			}
+			if !found {
 				names[name] = name
 			}
 		}

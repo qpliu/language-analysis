@@ -139,6 +139,29 @@ func (db *fetcherDB) feed(feedID int64) (Feed, error) {
 	return Feed{}, fmt.Errorf("Nonexistent feedID: %d", feedID)
 }
 
+func (db *fetcherDB) file(fileID int64) (File, error) {
+	rows, err := db.db.Query("SELECT fileID, feedID, url, date, fetchTimestamp, purgeTimestamp FROM files WHERE fileID = ?", fileID)
+	if err != nil {
+		return File{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		file := File{}
+		var date sql.NullString
+		var fetchTimestamp sql.NullString
+		var purgeTimestamp sql.NullString
+		if err := rows.Scan(&file.fileID, &file.feedID, &file.url, &date, &fetchTimestamp, &purgeTimestamp); err != nil {
+			return File{}, err
+		}
+		file.date = parseDate(date)
+		file.fetchTimestamp = parseTimestamp(fetchTimestamp)
+		file.purgeTimestamp = parseTimestamp(purgeTimestamp)
+		return file, nil
+	}
+	return File{}, fmt.Errorf("Nonexistent fileID: %d", fileID)
+}
+
 func (db *fetcherDB) unfetched(limit int) ([]File, error) {
 	rows, err := db.db.Query("SELECT fileID, feedID, url, date, purgeTimestamp FROM files WHERE fetchTimestamp IS NULL LIMIT ?", limit)
 	if err != nil {

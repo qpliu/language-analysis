@@ -1,3 +1,6 @@
-fetcher
 data/
+fetcher
 test-*.go
+show-file
+phrase-collect
+thank-collect

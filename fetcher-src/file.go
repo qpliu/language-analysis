@@ -69,6 +69,16 @@ func FilesSince(since time.Time, limit int) ([]File, error) {
 	return db.fetchedSince(since, limit)
 }
 
+func FileByID(fileID int64) (File, error) {
+	db, err := openFetcherDB(config.Options["dir"])
+	if err != nil {
+		return File{}, err
+	}
+	defer db.Close()
+
+	return db.file(fileID)
+}
+
 func fetchFile(file File, db *fetcherDB) bool {
 	fileData, err := fetch(file.url)
 	if err != nil {
