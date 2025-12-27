@@ -1,9 +1,6 @@
 package phraseAnalysis
 
 import (
-	"strings"
-	"unicode"
-
 	scraper "language-analysis/scraper-src"
 )
 
@@ -44,50 +41,20 @@ func CountPhrases(transcript []scraper.Transcript) (map[[2]string]int, map[[2]st
 	prefaceCounts := map[[2]string]int{}
 
 	for _, ts := range transcript {
-		phrase := [maxWords]string{}
+		phraser := scraper.MakePhraser(maxWords, ts.Text)
 		preface := true
-		for _, word := range strings.Split(ts.Text, " ") {
-			word = strings.ToLower(strings.TrimFunc(word, trimFunc))
-			for i := range maxWords {
-				if phrase[i] == "" {
-					phrase[i] = word
-					break
-				} else if i == maxWords-1 {
-					collectPhrase(ts.Name, phrase, phraseCounts)
-					if preface {
-						collectPreface(ts.Name, phrase, prefaceCounts)
-						preface = false
-					}
-					for j := range i {
-						phrase[j] = phrase[j+1]
-					}
-					phrase[i] = word
-				}
-			}
-		}
-		for phrase[0] != "" {
+		for phrase := phraser.Next(); phrase != nil; phrase = phraser.Next() {
 			collectPhrase(ts.Name, phrase, phraseCounts)
 			if preface {
 				collectPreface(ts.Name, phrase, prefaceCounts)
 				preface = false
 			}
-			for j := range maxWords - 1 {
-				phrase[j] = phrase[j+1]
-			}
-			phrase[maxWords-1] = ""
 		}
 	}
 	return phraseCounts, prefaceCounts
 }
 
-func trimFunc(r rune) bool {
-	if unicode.IsLetter(r) || unicode.IsNumber(r) {
-		return false
-	}
-	return true
-}
-
-func collectPhrase(speaker string, phrase [maxWords]string, phraseCounts map[[2]string]int) {
+func collectPhrase(speaker string, phrase []string, phraseCounts map[[2]string]int) {
 	p := phrase[0]
 	if _, ok := PHRASEIDS[p]; ok {
 		phraseCounts[[2]string{speaker, p}]++
@@ -102,7 +69,7 @@ func collectPhrase(speaker string, phrase [maxWords]string, phraseCounts map[[2]
 	}
 }
 
-func collectPreface(speaker string, phrase [maxWords]string, prefaceCounts map[[2]string]int) {
+func collectPreface(speaker string, phrase []string, prefaceCounts map[[2]string]int) {
 	p := phrase[0]
 	if _, ok := PREFACEIDS[p]; ok {
 		prefaceCounts[[2]string{speaker, p}]++

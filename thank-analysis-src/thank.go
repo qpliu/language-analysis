@@ -2,11 +2,11 @@ package thankAnalysis
 
 import (
 	"regexp"
-	"strings"
-	"unicode"
 
 	scraper "language-analysis/scraper-src"
 )
+
+const MaxWords = 5
 
 var thanksRegex = regexp.MustCompile(`\b[Tt]hank(s| you)\b`)
 
@@ -30,65 +30,22 @@ func ThankResponses(transcript []scraper.Transcript) []scraper.Transcript {
 	return results
 }
 
-func ResponsePhrases(text string) map[[5]string]bool {
-	phrases := map[[5]string]bool{}
+func ResponsePhrases(text string) map[[MaxWords]string]bool {
+	phrases := map[[MaxWords]string]bool{}
 
-	phrase := [5]string{}
-	words := strings.Split(text, " ")
-	for range 20 {
-		if len(words) == 0 {
-			break
+	phrase := [MaxWords]string{}
+	phraser := scraper.MakePhraser(MaxWords, text)
+	phraser.OnlyFirstWords(20)
+	for p := phraser.Next(); p != nil; p = phraser.Next() {
+		for i := range MaxWords {
+			phrase[i] = ""
 		}
-		word := strings.ToLower(strings.TrimFunc(words[0], trimFunc))
-		words = words[1:]
-		if word == "" {
-			continue
+		copy(phrase[:], p)
+		phrases[phrase] = true
+		for i := range MaxWords - 1 {
+			phrase[MaxWords-1-i] = ""
+			phrases[phrase] = true
 		}
-		if phrase[0] == "" {
-			phrase[0] = word
-		} else if phrase[1] == "" {
-			phrase[1] = word
-		} else if phrase[2] == "" {
-			phrase[2] = word
-		} else if phrase[3] == "" {
-			phrase[3] = word
-		} else if phrase[4] == "" {
-			phrase[4] = word
-		} else {
-			phrase[0], phrase[1], phrase[2], phrase[3], phrase[4] = phrase[1], phrase[2], phrase[3], phrase[4], word
-		}
-		if phrase[0] != "" {
-			p := phrase
-			phrases[p] = true
-			p[4] = ""
-			phrases[p] = true
-			p[3] = ""
-			phrases[p] = true
-			p[2] = ""
-			phrases[p] = true
-			p[1] = ""
-			phrases[p] = true
-		}
-	}
-	for phrase[0] != "" {
-		p := phrase
-		phrases[p] = true
-		p[4] = ""
-		phrases[p] = true
-		p[3] = ""
-		phrases[p] = true
-		p[2] = ""
-		phrases[p] = true
-		p[1] = ""
-		phrases[p] = true
-		phrase[0], phrase[1], phrase[2], phrase[3], phrase[4] = phrase[1], phrase[2], phrase[3], phrase[4], ""
 	}
 	return phrases
-}
-
-func trimFunc(r rune) bool {
-	if unicode.IsLetter(r) || unicode.IsNumber(r) {
-		return false
-	}
-	return true
 }
