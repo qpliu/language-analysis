@@ -34,38 +34,45 @@ func Collect(count int) bool {
 	}
 	defer db.Close()
 
-	fetchTimestamp, err := db.lastFetchTimestamp()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
-	}
-
-	files, err := fetcher.FilesSince(fetchTimestamp, count)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
-	}
-	if len(files) == 0 {
-		fmt.Printf("No more files.\n")
-		return false
-	}
-
 	phraseTotals := 0
 	prefaceTotals := 0
-	for _, file := range files {
-		content, err := scraper.Scrape(file)
+	for range count {
+		fetchTimestamp, err := db.lastFetchTimestamp()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return false
 		}
 
-		phraseCounts, prefaceCounts := CountPhrases(content)
-		if err := db.addCounts(file.ID(), file.Date(), phraseCounts, prefaceCounts); err != nil {
+		files, err := fetcher.FilesSince(fetchTimestamp, 1)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return false
+		}
+		if len(files) == 0 {
+			fmt.Printf("Counted %d phrase(s), %d preface(s).\n", phraseTotals, prefaceTotals)
+			fmt.Printf("No more files.\n")
+			return false
+		}
+
+		content, err := scraper.Scrape(files[0])
+		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return false
 		}
 
-		if err := db.setFetchTimestamp(file.FetchTimestamp()); err != nil {
+		phrases, prefaces, err := db.unfetchedPhrasesPrefaces(files[0].FetchTimestamp())
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return false
+		}
+
+		phraseCounts, prefaceCounts := CountPhrases(content, phrases, prefaces)
+		if err := db.addCounts(files[0].ID(), files[0].Date(), phrases, prefaces, phraseCounts, prefaceCounts); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return false
+		}
+
+		if err := db.setFetchTimestamp(files[0].FetchTimestamp()); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return false
 		}

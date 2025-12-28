@@ -31,7 +31,7 @@ func (db *phraseDB) Close() error {
 }
 
 func (db *phraseDB) init() error {
-	if _, err := db.db.Query("SELECT lastFetchTimestamp FROM fetcherState LIMIT 1"); err == nil {
+	if _, err := db.db.Query("SELECT phraseID FROM phrases LIMIT 1"); err == nil {
 		return nil
 	}
 
@@ -42,16 +42,18 @@ func (db *phraseDB) init() error {
 	defer tx.Rollback()
 
 	for _, statement := range []string{
-		`CREATE TABLE fetcherState (
-			lastFetchTimestamp TIMESTAMP)`,
-		`INSERT INTO fetcherState (lastFetchTimestamp)
-			VALUES ('1970-01-01 00:00:00')`,
 		`CREATE TABLE phrases (
-			phraseID INTEGER PRIMARY KEY,
-			phrase TEXT UNIQUE)`,
+			phraseID INTEGER PRIMARY KEY AUTOINCREMENT,
+			phrase TEXT UNIQUE NOT NULL,
+			lastFetchTimestamp TIMESTAMP)`,
+		`CREATE INDEX phrasesPhrase ON phrases (phrase)`,
+		`CREATE INDEX phrasesLastFetchTimestamp ON phrases (lastFetchTimestamp)`,
 		`CREATE TABLE prefaces (
-			prefaceID INTEGER PRIMARY KEY,
-			preface TEXT UNIQUE)`,
+			prefaceID INTEGER PRIMARY KEY AUTOINCREMENT,
+			preface TEXT UNIQUE NOT NULL,
+			lastFetchTimestamp TIMESTAMP)`,
+		`CREATE INDEX prefacesPreface ON prefaces (preface)`,
+		`CREATE INDEX prefacesLastFetchTimestamp ON prefaces (lastFetchTimestamp)`,
 		`CREATE TABLE speakers (
 			speakerID INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT UNIQUE)`,
@@ -80,57 +82,47 @@ func (db *phraseDB) init() error {
 		}
 	}
 
-	for i, phrase := range PHRASES {
-		if _, err := tx.Exec("INSERT INTO phrases (phraseID, phrase) VALUES (?,?)", i, phrase); err != nil {
-			return err
-		}
-	}
-
-	for i, preface := range PREFACES {
-		if _, err := tx.Exec("INSERT INTO prefaces (prefaceID, preface) VALUES (?,?)", i, preface); err != nil {
-			return err
-		}
-	}
-
 	return tx.Commit()
 }
 
 func parseDate(dateString sql.NullString) time.Time {
-	t, _ := time.Parse(time.RFC3339, dateString.String)
+	if t, err := time.Parse(time.RFC3339, dateString.String); err == nil {
+		return t
+	}
+	t, _ := time.Parse(time.DateOnly, dateString.String)
 	return t
 }
 
 func parseTimestamp(timestampString sql.NullString) time.Time {
-	t, _ := time.Parse(time.RFC3339, timestampString.String)
+	if t, err := time.Parse(time.RFC3339, timestampString.String); err == nil {
+		return t
+	}
+	t, _ := time.Parse(time.DateTime, timestampString.String)
 	return t
 }
 
 func (db *phraseDB) lastFetchTimestamp() (time.Time, error) {
-	rows, err := db.db.Query("SELECT lastFetchTimestamp FROM fetcherState LIMIT 1")
+	rows, err := db.db.Query("SELECT MIN(phrases.lastFetchTimestamp),  MIN(prefaces.lastFetchTimestamp) FROM phrases, prefaces")
 	if err != nil {
 		return time.Time{}, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var fetchTimestamp sql.NullString
-		if err := rows.Scan(&fetchTimestamp); err != nil {
+		var phrasesFetchTimestamp sql.NullString
+		var prefacesFetchTimestamp sql.NullString
+		if err := rows.Scan(&phrasesFetchTimestamp, &prefacesFetchTimestamp); err != nil {
 			return time.Time{}, err
 		}
-		return parseTimestamp(fetchTimestamp), nil
+		ts1 := parseTimestamp(phrasesFetchTimestamp)
+		ts2 := parseTimestamp(prefacesFetchTimestamp)
+		if ts1.Before(ts2) {
+			return ts1, nil
+		} else {
+			return ts2, nil
+		}
 	}
-
-	tx, err := db.db.Begin()
-	if err != nil {
-		return time.Time{}, err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.Exec("INSERT INTO fetcherState (lastFetchTimestamp) VALUES ('1970-01-01 00:00:00')"); err != nil {
-		return time.Time{}, err
-	}
-
-	return time.Time{}, tx.Commit()
+	return time.Time{}, nil
 }
 
 func (db *phraseDB) setFetchTimestamp(lastFetchTimestamp time.Time) error {
@@ -140,26 +132,92 @@ func (db *phraseDB) setFetchTimestamp(lastFetchTimestamp time.Time) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("UPDATE fetcherState SET lastFetchTimestamp = ?", lastFetchTimestamp.Format(time.DateTime)); err != nil {
+	if _, err := tx.Exec("UPDATE phrases SET lastFetchTimestamp = ? WHERE lastFetchTimestamp < ?", lastFetchTimestamp.Format(time.DateTime), lastFetchTimestamp.Format(time.DateTime)); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec("UPDATE prefaces SET lastFetchTimestamp = ? WHERE lastFetchTimestamp < ?", lastFetchTimestamp.Format(time.DateTime), lastFetchTimestamp.Format(time.DateTime)); err != nil {
 		return err
 	}
 
 	return tx.Commit()
 }
 
-func (db *phraseDB) addCounts(fileID int64, date time.Time, phrases map[[2]string]int, prefaces map[[2]string]int) error {
+func (db *phraseDB) unfetchedPhrasesPrefaces(fetchTimestamp time.Time) (map[string]int64, map[string]int64, error) {
+	phrases := map[string]int64{}
+	rows, err := db.db.Query("SELECT phraseID, phrase FROM phrases WHERE lastFetchTimestamp < ?", fetchTimestamp.Format(time.DateTime))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var phraseID int64
+		var phrase string
+		if err := rows.Scan(&phraseID, &phrase); err != nil {
+			return nil, nil, err
+		}
+		phrases[phrase] = phraseID
+	}
+
+	prefaces := map[string]int64{}
+	rows, err = db.db.Query("SELECT prefaceID, preface FROM prefaces WHERE lastFetchTimestamp < ?", fetchTimestamp.Format(time.DateTime))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var prefaceID int64
+		var preface string
+		if err := rows.Scan(&prefaceID, &preface); err != nil {
+			return nil, nil, err
+		}
+		prefaces[preface] = prefaceID
+	}
+
+	return phrases, prefaces, nil
+}
+
+func (db *phraseDB) addPhrase(phrase string) error {
 	tx, err := db.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("INSERT INTO files (fileID, date) VALUES (?,?)", fileID, date.Format(time.DateOnly)); err != nil {
+	if _, err := tx.Exec("INSERT INTO phrases (phrase, lastFetchTimestamp) VALUES (?, '1970-01-01 00:00:00')", phrase); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (db *phraseDB) addPreface(preface string) error {
+	tx, err := db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("INSERT INTO prefaces (preface, lastFetchTimestamp) VALUES (?, '1970-01-01 00:00:00')", preface); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (db *phraseDB) addCounts(fileID int64, date time.Time, phrases, prefaces map[string]int64, phraseCounts map[[2]string]int, prefaceCounts map[[2]string]int) error {
+	tx, err := db.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("INSERT OR IGNORE INTO files (fileID, date) VALUES (?,?)", fileID, date.Format(time.DateOnly)); err != nil {
 		return err
 	}
 
 	speakerIDs := map[string]int64{}
-	for item := range phrases {
+	for item := range phraseCounts {
 		if _, ok := speakerIDs[item[0]]; ok {
 			continue
 		}
@@ -169,7 +227,7 @@ func (db *phraseDB) addCounts(fileID int64, date time.Time, phrases map[[2]strin
 		}
 		speakerIDs[item[0]] = speakerID
 	}
-	for item := range prefaces {
+	for item := range prefaceCounts {
 		if _, ok := speakerIDs[item[0]]; ok {
 			continue
 		}
@@ -180,8 +238,8 @@ func (db *phraseDB) addCounts(fileID int64, date time.Time, phrases map[[2]strin
 		speakerIDs[item[0]] = speakerID
 	}
 
-	for item, count := range phrases {
-		phraseID, ok := PHRASEIDS[item[1]]
+	for item, count := range phraseCounts {
+		phraseID, ok := phrases[item[1]]
 		if !ok || count <= 0 {
 			continue
 		}
@@ -190,8 +248,8 @@ func (db *phraseDB) addCounts(fileID int64, date time.Time, phrases map[[2]strin
 		}
 	}
 
-	for item, count := range prefaces {
-		prefaceID, ok := PREFACEIDS[item[1]]
+	for item, count := range prefaceCounts {
+		prefaceID, ok := prefaces[item[1]]
 		if !ok || count <= 0 {
 			continue
 		}
