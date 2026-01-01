@@ -60,7 +60,7 @@ func (file File) Contents() ([]byte, error) {
 }
 
 func FilesSince(since time.Time, limit int) ([]File, error) {
-	db, err := openFetcherDB(config.Options["dir"])
+	db, err := openFetcherDB()
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func FilesSince(since time.Time, limit int) ([]File, error) {
 }
 
 func FileByID(fileID int64) (File, error) {
-	db, err := openFetcherDB(config.Options["dir"])
+	db, err := openFetcherDB()
 	if err != nil {
 		return File{}, err
 	}
@@ -79,43 +79,37 @@ func FileByID(fileID int64) (File, error) {
 	return db.file(fileID)
 }
 
-func fetchFile(file File, db *fetcherDB) bool {
+func fetchFile(file File, db *fetcherDB) error {
 	fileData, err := fetch(file.url)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return err
 	}
 
 	dirname, filename := filename(file)
 	if err := os.MkdirAll(dirname, os.ModePerm); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return err
 	}
 
 	fd, err := os.Create(dirname + "/" + filename)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return err
 	}
 	defer fd.Close()
 
 	gz := gzip.NewWriter(fd)
 	defer gz.Close()
 	if _, err := gz.Write(fileData); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return err
 	}
 
 	if err := db.updateFileFetched(file.fileID); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return err
 	}
 
-	fmt.Printf("done\n")
-	return true
+	return nil
 }
 
 func filename(file File) (string, string) {
 	hash := sha1.Sum([]byte(file.url))
-	return fmt.Sprintf("%s/files/%x/%x", config.Options["dir"], hash[0:2], hash[2:4]), base64.RawURLEncoding.EncodeToString([]byte(file.url))
+	return fmt.Sprintf("%s/files/%x/%x", config.Dir(), hash[0:2], hash[2:4]), base64.RawURLEncoding.EncodeToString([]byte(file.url))
 }

@@ -6,14 +6,16 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"language-analysis/config"
 )
 
 type phraseDB struct {
 	db *sql.DB
 }
 
-func openPhraseDB(dir string) (*phraseDB, error) {
-	db, err := sql.Open("sqlite3", dir+"/phrase-analysis.db")
+func openPhraseDB() (*phraseDB, error) {
+	db, err := sql.Open("sqlite3", config.Dir()+"/phrase-analysis.db")
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +164,42 @@ func (db *phraseDB) unfetchedPhrasesPrefaces(fetchTimestamp time.Time) (map[stri
 
 	prefaces := map[string]int64{}
 	rows, err = db.db.Query("SELECT prefaceID, preface FROM prefaces WHERE lastFetchTimestamp < ?", fetchTimestamp.Format(time.DateTime))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var prefaceID int64
+		var preface string
+		if err := rows.Scan(&prefaceID, &preface); err != nil {
+			return nil, nil, err
+		}
+		prefaces[preface] = prefaceID
+	}
+
+	return phrases, prefaces, nil
+}
+
+func (db *phraseDB) phrasesPrefaces() (map[string]int64, map[string]int64, error) {
+	phrases := map[string]int64{}
+	rows, err := db.db.Query("SELECT phraseID, phrase FROM phrases")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var phraseID int64
+		var phrase string
+		if err := rows.Scan(&phraseID, &phrase); err != nil {
+			return nil, nil, err
+		}
+		phrases[phrase] = phraseID
+	}
+
+	prefaces := map[string]int64{}
+	rows, err = db.db.Query("SELECT prefaceID, preface FROM prefaces")
 	if err != nil {
 		return nil, nil, err
 	}

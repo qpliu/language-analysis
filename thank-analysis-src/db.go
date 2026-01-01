@@ -6,14 +6,16 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"language-analysis/config"
 )
 
 type thankDB struct {
 	db *sql.DB
 }
 
-func openThankDB(dir string) (*thankDB, error) {
-	db, err := sql.Open("sqlite3", dir+"/thank-analysis.db")
+func openThankDB() (*thankDB, error) {
+	db, err := sql.Open("sqlite3", config.Dir()+"/thank-analysis.db")
 	if err != nil {
 		return nil, err
 	}

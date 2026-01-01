@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"time"
-
-	"language-analysis/config"
 )
 
 type Feed struct {
@@ -22,7 +20,7 @@ type Feed struct {
 }
 
 func AddFeed(urlTemplate, scraperRx string, scraperRxGroup int, earliestDateLimit time.Time) error {
-	db, err := openFetcherDB(config.Options["dir"])
+	db, err := openFetcherDB()
 	if err != nil {
 		return err
 	}
@@ -31,11 +29,10 @@ func AddFeed(urlTemplate, scraperRx string, scraperRxGroup int, earliestDateLimi
 	return db.addFeed(urlTemplate, scraperRx, scraperRxGroup, earliestDateLimit)
 }
 
-func fetchFeed(feed Feed, db *fetcherDB) bool {
+func fetchFeed(feed Feed, db *fetcherDB) (bool, error) {
 	feedRegex, err := regexp.Compile(feed.scraperRx)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return false, err
 	}
 
 	earliest := true
@@ -58,21 +55,18 @@ func fetchFeed(feed Feed, db *fetcherDB) bool {
 	} else if earliest {
 		fetchDate = fetchDate.AddDate(0, 0, -1)
 		if fetchDate.Before(feed.earliestDateLimit) {
-			db.updateFeedEarliestFetched(feed.feedID, fetchDate.AddDate(0, 0, 1))
-			return false
+			return false, db.updateFeedEarliestFetched(feed.feedID, fetchDate.AddDate(0, 0, 1))
 		}
 	} else {
 		fetchDate = fetchDate.AddDate(0, 0, 1)
 		if fetchDate.After(time.Now().AddDate(0, 0, -7)) {
-			db.updateFeedLatestFetched(feed.feedID, fetchDate.AddDate(0, 0, -1))
-			return false
+			return false, db.updateFeedLatestFetched(feed.feedID, fetchDate.AddDate(0, 0, -1))
 		}
 	}
 
 	feedData, err := fetch(fmt.Sprintf(feed.urlTemplate, fetchDate.Format(time.DateOnly)))
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return false
+		return false, err
 	}
 
 	count := 0
@@ -80,7 +74,7 @@ func fetchFeed(feed Feed, db *fetcherDB) bool {
 		if len(match) > 2*feed.scraperRxGroup+1 {
 			link := string(feedData[match[2*feed.scraperRxGroup]:match[2*feed.scraperRxGroup+1]])
 			if err := db.addFile(feed.feedID, link, fetchDate); err != nil {
-				fmt.Printf("Error: %v\n", err)
+				fmt.Printf("Error: addFile: %v\n", err)
 			} else {
 				count++
 			}
@@ -91,13 +85,13 @@ func fetchFeed(feed Feed, db *fetcherDB) bool {
 	if earliest {
 		err := db.updateFeedEarliestFetched(feed.feedID, fetchDate)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			return false, err
 		}
 	} else {
 		db.updateFeedLatestFetched(feed.feedID, fetchDate)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			return false, err
 		}
 	}
-	return true
+	return true, nil
 }

@@ -6,14 +6,16 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"language-analysis/config"
 )
 
 type fetcherDB struct {
 	db *sql.DB
 }
 
-func openFetcherDB(dir string) (*fetcherDB, error) {
-	db, err := sql.Open("sqlite3", dir+"/fetcher.db")
+func openFetcherDB() (*fetcherDB, error) {
+	db, err := sql.Open("sqlite3", config.Dir()+"/fetcher.db")
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,16 @@ import (
 	"language-analysis/config"
 )
 
+var Config struct {
+	Feed []struct {
+		Name              string
+		URLTemplate       string
+		ScraperRx         string
+		ScraperRxGroup    int
+		EarliestDateLimit time.Time
+	}
+}
+
 func formatDate(t time.Time) string {
 	if t.IsZero() {
 		return "NONE"
@@ -21,97 +31,131 @@ func formatTimestamp(t time.Time) string {
 	return t.Format(time.DateTime)
 }
 
-func StatusCommand() {
-	db, err := openFetcherDB(config.Options["dir"])
+func StatusCommand() error {
+	db, err := openFetcherDB()
 	if err != nil {
-		fmt.Printf("Failed to open fetcher database: %v\n", err)
-		return
+		return fmt.Errorf("Failed to open fetcher database: %v", err)
 	}
+	defer db.Close()
 	feeds, err := db.feeds()
 	if err != nil {
-		fmt.Printf("Failed to get feeds from fetcher database: %v\n", err)
-		return
+		return fmt.Errorf("Failed to get feeds from fetcher database: %v", err)
 	}
+
+	unaddedFeeds := []string{}
+	for _, f := range Config.Feed {
+		unadded := true
+		for _, feed := range feeds {
+			if f.URLTemplate == feed.urlTemplate {
+				unadded = false
+				break
+			}
+		}
+		if unadded {
+			unaddedFeeds = append(unaddedFeeds, f.Name)
+		}
+	}
+	if len(unaddedFeeds) > 0 {
+		fmt.Printf("Unadded feeds:\n")
+		for i, f := range unaddedFeeds {
+			fmt.Printf(" %2d: %s\n", i, f)
+		}
+	}
+
 	for _, feed := range feeds {
-		fmt.Printf("Feed %d:\n", feed.feedID)
-		fmt.Printf("    url template: %s\n", feed.urlTemplate)
-		fmt.Printf("    scraper rx(%d): %s\n", feed.scraperRxGroup, feed.scraperRx)
-		fmt.Printf("    date limit: %s\n", formatDate(feed.earliestDateLimit))
+		unconfigured := true
+		for _, f := range Config.Feed {
+			if f.URLTemplate == feed.urlTemplate {
+				unconfigured = false
+				fmt.Printf("Feed %d: %s\n", feed.feedID, f.Name)
+				break
+			}
+		}
+		if unconfigured {
+			fmt.Printf("Feed %d (unconfigured): %s\n", feed.feedID, feed.urlTemplate)
+		}
 		fmt.Printf("    earliest: %s (%s)\n", formatDate(feed.earliestFetchDate), formatTimestamp(feed.earliestFetchDateTimestamp))
 		fmt.Printf("    latest: %s (%s)\n", formatDate(feed.latestFetchDate), formatTimestamp(feed.latestFetchDateTimestamp))
 		if count, err := db.countUnfetched(feed.feedID); err != nil {
 			fmt.Printf("    error fetching pending unfetched count: %v\n", err)
-		} else {
+		} else if count > 0 {
 			fmt.Printf("    pending unfetched count: %d\n", count)
 		}
 	}
+	return nil
 }
 
-func FetchCommand() {
-	db, err := openFetcherDB(config.Options["dir"])
+func FetchCommand() error {
+	db, err := openFetcherDB()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 	defer db.Close()
-	fetchNext(db)
+	return fetchNext(db)
 }
 
-func FetchLoopCommand() {
-	sleep, err := time.ParseDuration(config.Options["fetcher-sleep"])
+func AddFeedsCommand() error {
+	return fmt.Errorf("Not implemented.")
+}
+
+func FetchLoopCommand() error {
+	sleep, err := config.Duration("fetcher-sleep", 15*time.Second)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
-	db, err := openFetcherDB(config.Options["dir"])
+	db, err := openFetcherDB()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 	defer db.Close()
 
 	for {
-		fetchNext(db)
+		if err := fetchNext(db); err != nil {
+			return err
+		}
 		time.Sleep(sleep)
 	}
 }
 
-func fetchNext(db *fetcherDB) {
+func fetchNext(db *fetcherDB) error {
 	files, err := db.unfetched(10)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return err
 	}
 
 	if len(files) > 0 {
+		var err error
 		for _, file := range files {
-			if fetchFile(file, db) {
-				return
+			if err = fetchFile(file, db); err == nil {
+				return nil
 			}
 		}
-		return
+		return err
 	}
 
 	feeds, err := db.feeds()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		return err
 	}
 
 	if len(feeds) == 0 {
-		return
+		return nil
 	}
 
 	feed := feeds[0]
 	for _, f := range feeds[1:] {
 		if feed.earliestFetchDateTimestamp.IsZero() {
-			if fetchFeed(feed, db) {
-				return
+			if fetched, err := fetchFeed(feed, db); err != nil {
+				return err
+			} else if fetched {
+				return nil
 			}
 			feed = f
 		} else if f.earliestFetchDateTimestamp.Before(feed.earliestFetchDateTimestamp) {
 			feed = f
 		}
 	}
-	fetchFeed(feed, db)
+	_, err = fetchFeed(feed, db)
+	return err
 }

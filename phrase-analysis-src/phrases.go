@@ -3,14 +3,13 @@ package phraseAnalysis
 import (
 	"time"
 
-	"language-analysis/config"
 	scraper "language-analysis/scraper-src"
 )
 
 const maxWords = 5
 
 func PhrasesPrefaces() (map[string]int64, map[string]int64, error) {
-	db, err := openPhraseDB(config.Options["dir"])
+	db, err := openPhraseDB()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -20,7 +19,7 @@ func PhrasesPrefaces() (map[string]int64, map[string]int64, error) {
 }
 
 func AddPhrase(phrase string) error {
-	db, err := openPhraseDB(config.Options["dir"])
+	db, err := openPhraseDB()
 	if err != nil {
 		return err
 	}
@@ -30,7 +29,7 @@ func AddPhrase(phrase string) error {
 }
 
 func AddPreface(preface string) error {
-	db, err := openPhraseDB(config.Options["dir"])
+	db, err := openPhraseDB()
 	if err != nil {
 		return err
 	}

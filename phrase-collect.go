@@ -1,41 +1,29 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"strings"
-
 	"language-analysis/config"
 	phrases "language-analysis/phrase-analysis-src"
 )
 
 func main() {
-	run := false
-	for _, arg := range os.Args[1:] {
-		if len(arg) > 0 && arg[0] == '-' {
-			if eq := strings.Index(arg, "="); eq > 0 {
-				config.Options[arg[1:eq]] = arg[eq+1:]
-			} else {
-				config.Options[arg[1:eq]] = ""
-			}
-			continue
-		}
-		switch arg {
-		case "status":
-			phrases.StatusCommand()
-			run = true
-		default:
-			fmt.Fprintf(os.Stderr, "%s: unknown command %s.  Available commands: status\n", os.Args[0])
-			os.Exit(1)
-		}
-	}
-	if !run {
-		count := 500
-		if _, err := fmt.Sscanf(config.Options["phrase-collect-count"], "%d", &count); err != nil {
-			fmt.Printf("Error: %v", err)
-			return
-		}
-
-		phrases.Collect(count)
-	}
+	config.Run([]config.Command{
+		config.Command{
+			Name: "status",
+			Run:  phrases.StatusCommand,
+		},
+		config.Command{
+			Name: "collect",
+			Run:  phrases.CollectCommand,
+		},
+		config.Command{
+			Name: "add",
+			Run:  phrases.AddCommand,
+		},
+	}, config.Command{
+		Name: "collect",
+		Run:  phrases.CollectCommand,
+	}, func() error {
+		filename := config.Dir() + "/phrase-analysis.toml"
+		return config.ReadConfig(filename, &phrases.Config)
+	}, nil)
 }
